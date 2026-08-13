@@ -1,3 +1,6 @@
+### 5.6.3
+- Updated SharpCompress to 0.48.1 to address CVE-2026-44788
+
 ### 5.6.2
 - [e57] missing 'ReturnIndex' element: replaced exception with warning 
 - [e57] E57Data3D.Points.ReadDataFull(...) now also returns 'ReturnCount' and 'ReturnIndex' data
