@@ -1,3 +1,6 @@
+- [PointSet] Fixed `EnumerateCellColumns` to stay within the root's true XY footprint and honor absolute-grid strides; removed the unused explicit-footprint `ColZ` constructor (#21)
+- [Intersection] Restored the `ArgumentNullException` contract for null `SphereSet` input (#39)
+
 ### 5.6.3
 - Updated SharpCompress to 0.48.1 to address CVE-2026-44788
 
@@ -380,4 +383,3 @@
 
 ### 5.1.1
 - updated to FSharp.Data.Adaptive 1.1 and base 5.1 track
-

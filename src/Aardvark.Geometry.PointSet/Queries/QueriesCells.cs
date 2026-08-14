@@ -534,33 +534,35 @@ public static partial class Queries
     }
 
     /// <summary>
-    /// Enumerates all columns of a given cell size (given by cellExponent).
-    /// Cell size is 2^cellExponent, e.g. -2 gives 0.25, -1 gives 0.50, 0 gives 1.00, 1 gives 2.00, and so on.
-    /// Stride is step size (default is V3i.III), which must be greater 0 for each coordinate axis.
+    /// Enumerates every non-empty XY column of size 2^<paramref name="cellExponent"/>
+    /// inside the point set root's actual XY footprint. The default stride
+    /// <see cref="V2i.II"/> selects every target-exponent column.
     /// </summary>
     public static IEnumerable<CellQueryResult2d> EnumerateCellColumns(this PointSet pointset, int cellExponent)
         => EnumerateCellColumns(pointset.Root.Value, cellExponent);
 
     /// <summary>
-    /// Enumerates all columns of a given cell size (given by cellExponent).
-    /// Cell size is 2^cellExponent, e.g. -2 gives 0.25, -1 gives 0.50, 0 gives 1.00, 1 gives 2.00, and so on.
-    /// Stride is step size (default is V3i.III), which must be greater 0 for each coordinate axis.
+    /// Enumerates every non-empty XY column of size 2^<paramref name="cellExponent"/>
+    /// inside the root's actual XY footprint. The default stride <see cref="V2i.II"/>
+    /// selects every target-exponent column.
     /// </summary>
     public static IEnumerable<CellQueryResult2d> EnumerateCellColumns(this IPointCloudNode root, int cellExponent)
         => EnumerateCellColumns(root, cellExponent, V2i.II);
 
     /// <summary>
-    /// Enumerates all columns of a given cell size (given by cellExponent).
-    /// Cell size is 2^cellExponent, e.g. -2 gives 0.25, -1 gives 0.50, 0 gives 1.00, 1 gives 2.00, and so on.
-    /// Stride is step size (default is V3i.III), which must be greater 0 for each coordinate axis.
+    /// Enumerates non-empty XY columns of size 2^<paramref name="cellExponent"/> inside the
+    /// point set root's actual XY footprint. The absolute target-grid coordinates must satisfy
+    /// <c>X % stride.X == 0</c> and <c>Y % stride.Y == 0</c>. Both stride components must be
+    /// positive; stride filters columns and never pads the root footprint.
     /// </summary>
     public static IEnumerable<CellQueryResult2d> EnumerateCellColumns(this PointSet pointset, int cellExponent, V2i stride)
         => EnumerateCellColumns(pointset.Root.Value, cellExponent, stride);
 
     /// <summary>
-    /// Enumerates all columns of a given cell size (given by cellExponent).
-    /// Cell size is 2^cellExponent, e.g. -2 gives 0.25, -1 gives 0.50, 0 gives 1.00, 1 gives 2.00, and so on.
-    /// Stride is step size (default is V3i.III), which must be greater 0 for each coordinate axis.
+    /// Enumerates non-empty XY columns of size 2^<paramref name="cellExponent"/> inside the
+    /// root's actual XY footprint. The absolute target-grid coordinates must satisfy
+    /// <c>X % stride.X == 0</c> and <c>Y % stride.Y == 0</c>. Both stride components must be
+    /// positive; stride filters columns and never pads the root footprint.
     /// </summary>
     public static IEnumerable<CellQueryResult2d> EnumerateCellColumns(this IPointCloudNode root, int cellExponent, V2i stride)
     {
@@ -575,14 +577,7 @@ public static partial class Queries
 
         var cache = new CellQueryResult2dCache();
 
-        // new-style
-        var dx = Fun.PowerOfTwo(cellExponent) * (ulong)(stride.X - 1 / 2); // FIXME: missing parantheses?
-        var dy = Fun.PowerOfTwo(cellExponent) * (ulong)(stride.Y - 1 / 2);
-        var bbCell = new Cell2d(root.Cell.X, root.Cell.X, root.Cell.Exponent).BoundingBox;
-        var bb = new Box2d(bbCell.Min - new V2d(dx, dy), bbCell.Max + new V2d(dx, dy));
-        var enlargedFootprint = new Cell2d(bb);
-
-        var cs = new ColZ(root, enlargedFootprint).EnumerateColumns(cellExponent, stride);
+        var cs = new ColZ(root).EnumerateColumns(cellExponent, stride);
         foreach (var c in cs)
         {
             yield return new CellQueryResult2d(root, c.Footprint, c, cache);
@@ -602,13 +597,6 @@ public static partial class Queries
             Nodes = [n ?? throw new ArgumentNullException(nameof(n))];
             Rest = Chunk.Empty;
         }
-        public ColZ(IPointCloudNode n, Cell2d footprint)
-        {
-            Footprint = footprint;
-            Nodes = [n ?? throw new ArgumentNullException(nameof(n))];
-            Rest = Chunk.Empty;
-        }
-
         private ColZ(Cell2d footprint, IPointCloudNode[] nodes, Chunk rest)
         {
             Footprint = footprint;
@@ -636,7 +624,7 @@ public static partial class Queries
 
             if (Footprint.Exponent == cellExponent)
             {
-                if (Footprint.X % stride.X == 0 && Footprint.Y % stride.Y == 0)
+                if (Footprint.X % stride.X == 0 && Footprint.Y % stride.Y == 0 && HasAnyPoint)
                 {
                     yield return this;
                 }
@@ -649,11 +637,37 @@ public static partial class Queries
                     foreach (var x in col.EnumerateColumns(cellExponent, stride))
                     {
                         if (x.Footprint.X % stride.X != 0 || x.Footprint.Y % stride.Y != 0) continue;
-                        if (x.CountTotal == 0) continue;
                         yield return x;
                     }
                 }
             }
+        }
+
+        private bool HasAnyPoint
+        {
+            get
+            {
+                if (!Rest.IsEmpty) return true;
+                foreach (var node in Nodes)
+                {
+                    if (NodeHasAnyPoint(node)) return true;
+                }
+                return false;
+            }
+        }
+
+        private static bool NodeHasAnyPoint(IPointCloudNode node)
+        {
+            if (node.PointCountTree > 0) return true;
+            if (node.IsLeaf) return node.PointCountCell > 0;
+
+            var subnodes = node.Subnodes;
+            if (subnodes == null) return false;
+            foreach (var subnode in subnodes)
+            {
+                if (subnode != null && NodeHasAnyPoint(subnode.Value)) return true;
+            }
+            return false;
         }
 
         /// <summary>
